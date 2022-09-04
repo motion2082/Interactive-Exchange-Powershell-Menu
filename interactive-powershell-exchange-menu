@@ -1,0 +1,132 @@
+#Ensure Module below is Installed
+#Find-Module -Name ExchangeOnlineManagement
+#Install-Module -Name ExchangeOnlineManagement -Scope AllUsers
+#Get-Command -Module ExchangeOnlineManagement
+
+#Connect & Login to ExchangeOnline (MFA)
+$getsessions = Get-PSSession | Select-Object -Property State, Name
+$isconnected = (@($getsessions) -like '@{State=Opened; Name=ExchangeOnlineInternalSession*').Count -gt 0
+#If not connected, go connect to EXO
+If ($isconnected -ne "True") {
+Connect-ExchangeOnline
+}
+
+#Create an Interactive Menu
+function Show-Menu
+{
+    param (
+        [string]$Title = 'Exchange Online Admin'
+    )
+    Clear-Host
+    Write-Host "================ $Title ================"
+    
+    Write-Host "F: Find Mailbox like *"
+    Write-Host "1: Set Staff Email:" -NoNewline; Write-Host " $staffemail" -ForegroundColor Green;
+    Write-Host "2: Set Shared Mailbox:" -NoNewline; Write-Host " $sharedmailbox" -ForegroundColor Green;
+    Write-Host "3: Add Full Access to Shared Mailbox:"
+    Write-Host "4: Add Send on Behalf Permissions to User on Mailbox:"
+    Write-Host "5: Add Send As Permissions to User on Mailbox:"
+    Write-Host "6: Remove Full Access to SharedMailbox:"
+    Write-Host "7: Remove Send on Behalf Permissions to User on Mailbox:"
+    Write-Host "8: Remove Send As Permissions to User on Mailbox:"
+    Write-Host "9: View Shared Mailbox Full Access Permissions:"
+    Write-Host "10: View Send As Permissions on Shared Mailbox:"
+    Write-Host "11: View Send on Behalf Permissions on Shared Mailbox"
+    Write-Host "==============================================="
+    Write-Host "12: Find DL that sounds like *"
+    Write-Host "13: Set DL: " -NoNewline; Write-Host " $SetDL" -ForegroundColor Green;
+    Write-Host "14: List DL Members" 
+    Write-Host "15: Add Staff as DL Member"
+    Write-Host "16: Remove Staff as DL Member"
+    Write-Host "==============================================="
+    Write-Host "17: Find DDL that sounds like *"
+    Write-Host "18: Set DDL: " -NoNewline; Write-Host " $SetDDL" -ForegroundColor Green;
+    Write-Host "19: List DDL Members"
+    Write-Host "==============================================="
+    Write-Host "C: Clear Variables."
+    Write-Host "Q: Press 'Q' to quit."
+    Write-Host "==============================================="
+}
+
+do
+ {
+     Show-Menu
+     $selection = Read-Host "Please make a selection"
+     switch ($selection)
+     {
+         'F' {
+         #Search for the following Wildcard
+         $search = Read-Host "Please Enter Search Phrase"
+         Get-EXOMailbox -Identity "$search*" | ft Alias, DisplayName, UserPrincipalName, RecipientType, RecipientTypeDetails
+         } '1' {
+         #Set Staff Email
+         $staffemail = Read-Host "Please enter Users Email"
+         Write-Host "Staff Email is Set to $staffemail"
+         } '2' {
+         #Set Shared Mailbox
+         $sharedmailbox = Read-Host "Please enter Shared Mailbox" 
+         Write-Host "Shared Mailbox is Set to $sharedMailbox"
+         } '3' {
+         #Add User to have Full Access to Mailbox
+         Add-MailboxPermission -Identity $sharedmailbox -User $staffemail -AccessRights FullAccess -AutoMapping:$true
+         } '4' {
+         #Add Send on Behalf Permissions to:
+         Set-Mailbox "$sharedmailbox" -GrantSendOnBehalfTo @{add="$staffemail"}
+         } '5' {
+         #Add Send As Permissions to:
+         Add-RecipientPermission "$sharedmailbox" -AccessRights SendAs -Trustee "$staffemail" -Confirm:$false
+         } '6' {
+         #Remove User to have Full Access to Mailbox
+         Remove-MailboxPermission -Identity $sharedmailbox -User $staffemail -AccessRights FullAccess
+         } '7' {
+         #Remove Send on Behalf Permissions to:
+         Set-Mailbox "$sharedmailbox" -GrantSendOnBehalfTo @{remove="$staffemail"}
+         } '8' {
+         #Remove Send As Permissions to:
+         Remove-RecipientPermission "$sharedmailbox" -AccessRights SendAs -Trustee "$staffemail" -Confirm:$false
+         } '9' {
+         #View Shared Mailbox Full Access Permissions
+         Get-EXOMailbox “$sharedmailbox” | Get-EXOMailboxPermission | where {$_.user.tostring() -ne “NT AUTHORITY\SELF” -and $_.IsInherited -eq $false} | Format-Table Identity, User, AccessRights –AutoSize
+         } '10' {
+         #View Send As Permissions on Shared Mailbox
+         Get-EXORecipientPermission -Identity $SharedMailbox | ft Identity, Trustee, AccessRights, AccessControlType
+         } '11' {
+         #View Send on Behalf Permissions on Shared Mailbox
+         Get-Mailbox $SharedMailbox | where {$_.GrantSendOnBehalfTo -ne $null} | select Name,Alias,PrimarySmtpAddress,GrantSendOnBehalfTo
+         } '12' {
+         #Find DL that sounds like *Wildcard*
+         $DL = Read-Host "Please Enter Search Phrase"
+         Get-DistributionGroup -Identity "*$DL*" | fl DisplayName, PrimarySMTPAddress, RecipientType
+         } '13' {
+         #Set DL to
+         $SetDL = Read-Host "Please enter Distribution Group Name"
+         } '14' {
+         #Get DL Selected Members
+         Get-DistributionGroupMember (get-DistributionGroup -Identity "$SetDL").identity| ft Name, DisplayName, PrimarySmtpAddress, Title
+         } '15' {
+         #Add New DL Member
+         Add-DistributionGroupMember -Identity "$SetDL" -Member "$staffemail"
+         Write-Host "$staffemail has been added to $SetDL"
+         } '16' {
+         #Remove DL Member
+         Remove-DistributionGroupMember -Identity "$SetDL" -Member "$staffemail"
+         Write-Host "$staffemail has been removed from $SetDL"
+         } '17' {
+         #Find DDL that sounds like *
+         $DDL = Read-Host "Please Enter Search Phrase"
+         Get-DynamicDistributionGroup -Identity "*$DDL*" | fl DisplayName, PrimarySMTPAddress, RecipientType
+         } '18' {
+         #Set DDL: 
+         $SetDDL = Read-Host "Please enter Dynamic Distribution Group Name"
+         Write-Host "DDL set to $DDL"
+         } '19' {
+         #List DDL Members
+         Get-DynamicDistributionGroupMember (get-DynamicDistributionGroup -Identity "$SetDDL").identity| ft Name, DisplayName, PrimarySmtpAddress, Title
+         } 'C' { 
+         Remove-Variable * -ErrorAction SilentlyContinue
+         Write-Host 'Press Enter to reset all the variables?' -ForegroundColor Green 
+         }
+     }
+     pause
+ }
+ until ($selection -eq 'q')
